@@ -34,8 +34,8 @@ img <- abind(lapply(1:3, function(x) t(ocean[,dim(ocean)[2]:1,x]/255)), along = 
 
 
 generate_studio(material=dielectric(color = "white")) %>%
-  add_object(sphere(x = 0, radius=0.9999, angle=c(0,0,0),
+  add_object(sphere(x = 0, y = 1, radius=0.9999, angle=c(0,0,0),
                     material = glossy(gloss=0.3, image_texture =  img))) %>%
-  add_object(sphere(y = 5, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
-  render_scene(width=1200, height=1200, aperture=0, fov=15, sample_method = "stratified", parallel = TRUE,
-               samples= 2000, clamp_value=10, lookfrom=c(0,1,10), camera_up = c(0,3,0))
+  add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
+  render_scene(width=200, height=200, aperture = 0, fov = 15, sample_method = "stratified", parallel = TRUE,
+               samples= 200, clamp_value=10, lookfrom=c(0,1,10), camera_up = c(0,1,0))
