@@ -33,9 +33,9 @@ ocean[land!=255]  <- land[land!=255]
 img <- abind(lapply(1:3, function(x) t(ocean[,dim(ocean)[2]:1,x]/255)), along = 3)
 
 
-generate_studio(material=dielectric(color = "white")) %>%
+generate_studio(material=diffuse(color = "grey10")) %>%
   add_object(sphere(x = 0, y = 1, radius=0.9999, angle=c(0,0,0),
                     material = glossy(gloss=0.3, image_texture =  img))) %>%
   add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
-  render_scene(width=200, height=200, aperture = 0, fov = 15, sample_method = "stratified", parallel = TRUE,
-               samples= 200, clamp_value=10, lookfrom=c(0,1,10), camera_up = c(0,1,0))
+  render_scene(width=1200, height=1200, aperture = 0, fov = 15, sample_method = "stratified", parallel = TRUE,
+               samples= 4000, clamp_value=10, lookat = c(0,1,0), lookfrom = c(0,1,10), camera_up = c(0,1,0))
