@@ -48,40 +48,42 @@ TIFFindex <- cbind(TIFFindex, t(apply(TIFFindex, 1, function(x) {
 ### loop ###
 ############
 
-  ## globals
-  blues  <- colorRampPalette(pal_seeblau)
-  greens <- colorRampPalette(pal_seegruen)
-  
-  ## anlge init
-  rot <- cbind(seq(0, -18, length = nrow(TIFFindex)), 
-               seq(0, 125, length = nrow(TIFFindex)))
-  
-  ## wind track init
-  nrTracks <-  25
-  
-for(i in 20:nrow(TIFFindex)) {
+## globals
+blues  <- colorRampPalette(pal_seeblau)
+greens <- colorRampPalette(pal_seegruen)
+
+## anlge init
+rot <- cbind(seq(0, -18, length = nrow(TIFFindex)), 
+             seq(0, 125, length = nrow(TIFFindex)))
+
+## wind track init
+nrTracks <-  50
+
+for(i in 1:nrow(TIFFindex)) {
   
   if(i==1 || TIFFindex$ind[i-1]!=TIFFindex$ind[i]) {
-  
-  tmpBrick <- brick(paste0("~/Google Drive/Science/ProjectsData/MovSim/geoTiffs/WindSnow_", i, ".tif"))
-  spdR <- sqrt(tmpBrick[[1]]^2 + tmpBrick[[2]]^2)
-  
-  top  <- spdR; top[] <- NA
-  crds <- coordinates(top)[is.na(tmpBrick[[1]][]) & is.na(tmpBrick[[3]][]),]
-  top[is.na(tmpBrick[[1]][]) & is.na(tmpBrick[[3]][])] <- raster::extract(topo, crds)
-  top[coordinates(top)[,2]< -57] <- NA
-  
-  ocean  <- as.array(RGB(spdR, col = blues(100)))
-  land   <- as.array(RGB(top,  col = greens(100)))
-  
-  ocean[land!=255]  <- land[land!=255]
-  img <- abind(lapply(1:3, function(x) t(ocean[,dim(ocean)[2]:1,x]/255)), along = 3)
-  
+    
+    tmpBrick <- brick(paste0("~/Google Drive/Science/ProjectsData/MovSim/geoTiffs/WindSnow_", i, ".tif"))
+    spdR <- sqrt(tmpBrick[[1]]^2 + tmpBrick[[2]]^2)
+    
+    top  <- spdR; top[] <- NA
+    crds <- coordinates(top)[is.na(tmpBrick[[1]][]) & is.na(tmpBrick[[3]][]),]
+    top[is.na(tmpBrick[[1]][]) & is.na(tmpBrick[[3]][])] <- raster::extract(topo, crds)
+    top[coordinates(top)[,2]< -57] <- NA
+    
+    ocean  <- as.array(RGB(spdR, col = blues(100)))
+    land   <- as.array(RGB(top,  col = greens(100)))
+    
+    ocean[land!=255]  <- land[land!=255]
+    img <- abind(lapply(1:3, function(x) t(ocean[,dim(ocean)[2]:1,x]/255)), along = 3)
+    
   }
   
   ## tracks
   new <- array(dim = c(20, 2, nrTracks))
-  new[1,,] <- t(coordinates(spdR)[!is.na(spdR[]),][sample(1:sum(!is.na(spdR[])), nrTracks, prob = spdR[!is.na(spdR[])]),])
+  probWind <- spdR[!is.na(spdR[])]
+  new[1,,] <- t(coordinates(spdR)[!is.na(spdR[]),][sample(1:sum(!is.na(spdR[])), nrTracks, 
+                                                          prob = ((probWind-min(probWind)) / (max(probWind) - min(probWind))) * (1-0.5)*0.5),])
   
   if(i==1) tracks <- new else tracks <- abind(tracks, new, along = 3)
   
@@ -114,7 +116,7 @@ for(i in 20:nrow(TIFFindex)) {
   grTracks <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(st_coordinates(t)[,1:2]), st_coordinates(t)[,3]), function(x) {
     x[,2] <- x[,2]*-1
     sph2car(cbind(x,1))[,c(1,3,2)] %>%
-      path(x = 0, y = 7, material = diffuse(color="grey70"), width = 0.004, angle=c(180+rot[i,1],rot[i,2],0))
+      path(x = 0, y = 7, material = diffuse(color="grey80"), width = 0.002, angle=c(180+rot[i,1],rot[i,2],0))
   }, mc.cores = 4))
   
   
@@ -124,13 +126,13 @@ for(i in 20:nrow(TIFFindex)) {
     add_object(group_objects(grTracks)) %>%
     add_object(sphere(x = 18, y = TIFFindex$z[i]+7+(rot[i,1]/60)*9, z = 7, radius=7,
                       material = light(intensity=9))) %>%
-    render_scene(width=400, height=400, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
-                 samples= 300, clamp_value=10, lookfrom=c(1,7,10), lookat=c(0,7,0), camera_up = c(0,1,0),
+    render_scene(width=450, height=450, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
+                 samples= 200, clamp_value=10, lookfrom=c(1,7,10), lookat=c(0,7,0), camera_up = c(0,1,0),
                  filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
   
   
-  title_mat = matrix(0,60,400) %>%
-  add_title(title_text = glue::glue("Bar-tailed godwit migration - {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
+  title_mat = matrix(0,60,450) %>%
+    add_title(title_text = glue::glue("Bar-tailed godwit migration - {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
               title_bar_alpha = 1, title_bar_color = "grey30", title_size = 20,
               title_color = "white", filename=glue::glue("~/Desktop/tmp/title_{i}.png"))
   
@@ -144,5 +146,5 @@ for(i in 20:nrow(TIFFindex)) {
   file.remove(c(glue::glue("~/Desktop/tmp/globe_{i}.png"), glue::glue("~/Desktop/tmp/title_{i}.png")))
 }
 
-av::av_encode_video(glue::glue("~/Desktop/tmp/globe_{1:13}.png"), 
-                    output = "~/Desktop/globe_viz.mp4", framerate = 25)
+av::av_encode_video(glue::glue("~/Desktop/tmp/full_image_{1:225}.png"), 
+                    output = "~/Desktop/globe_viz.mp4", framerate = 15)
