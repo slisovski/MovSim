@@ -4,6 +4,8 @@ library(ncdf4)
 library(parallel)
 library(rgdal)
 library(rgeos)
+library(future.apply)
+plan(multisession)
 
 ### Tracks
 tracks <- read.csv("~/Google Drive/Science/ProjectsData/MovSim/Tracks/trackMovebank.csv")
@@ -24,7 +26,7 @@ fileList <- do.call("rbind", lapply(fls, function(x) {
   tms    <- as.POSIXct(nf$var[[1]]$dim[[4]]$vals*60*60, "1900-01-01", tz = "GMT")
   nc_close(nf)
   
-  data.frame(path = x, id = sapply(strsplit(x, "//"), function(y) y[[2]]), tms = tms, fileID = 1:length(tms))
+  data.frame(path = x, id = sapply(strsplit(x, "//"), function(y) y[[2]]), tms = tms, file = which(fls==x), fileID = 1:length(tms))
 }))
 
 
@@ -50,17 +52,17 @@ interpTracks <- do.call("rbind", lapply(split(tracks, tracks$tag.local.identifie
   # plot(wrld_simpl, add = T)
   # plot(maptools::elide(wrld_simpl, shift = c(360, 0)), add = T)
   
-  hourTrack <- cbind(hourTrack, t(mapply(function(i) {
-    ind <- which.min(abs(i - fileList$tms))
-    if(as.numeric(abs(difftime(i, fileList$tms[ind], units = "hours")))>5) {
-      cbind(NA, NA)
-    } else cbind(which(fls==as.character(fileList$path[ind])), fileList[ind,"fileID"])
-  }, i = hourTrack$tms)))
-  names(hourTrack)[11:12] <- c("ERAfile", "ERAind")
-  
   hourTrack
   
 }))
+
+interpTracks <- cbind(interpTracks, t(mapply(function(t) {
+  ind <- which.min(abs(t - fileList$tms))
+  td  <- abs(difftime(t, fileList$tms, units = "hours"))[ind]
+  if(td>5) {
+    c(NA, NA)
+  } else unlist(fileList[ind, c("file", "fileID")])
+}, t = interpTracks$tms)))
 
 # movFreq <- aggregate(interpTracks$mov, by = list(interpTracks$ERAind), FUN = function(x) sum(x)/length(x))
 # save(interpTracks, file = "~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracks.rda")
@@ -72,7 +74,7 @@ names(interpTracksWind) <- c(names(interpTracks), c("m10u", "m10v", "p700u", "p7
 
 ## snow Cover (24km)
 fls.gz <- list.files("/Volumes/slisovski/RemoteSensedData/IMS_DailyNHSnowIceAnalysis/24km/2020/", pattern = ".asc.gz", recursive = T,  full.names = T)
-dates  <- as.Date(as.POSIXct(unlist(lapply(strsplit(fls.gz, "ims"), function(x) strsplit(x[[2]], "_24km")))[c(TRUE, FALSE)], format = "%Y%j"))
+datesSnow  <- as.Date(as.POSIXct(unlist(lapply(strsplit(fls.gz, "ims"), function(x) strsplit(x[[2]], "_24km")))[c(TRUE, FALSE)], format = "%Y%j"))
 prj <- "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
 
 
@@ -87,18 +89,18 @@ tms10    <- as.POSIXct(nf$var[[1]]$dim[[3]]$vals*60*60, "1900-01-01", tz = "GMT"
 nc_close(nf)
 tms10ind <- mapply(function(x) which.min(abs(x-tms10)), x = interpTracks$tms[!duplicated(interpTracks$ERAind)])
 
-ERAindex <- expand.grid(unique(interpTracksWind$ERAfile), unique(interpTracksWind$ERAind))
+ERAindex <- cbind(interpTracksWind$file, interpTracksWind$fileID)[!duplicated(paste(interpTracksWind$file, interpTracksWind$fileID)),]
 ERAindex <- ERAindex[order(ERAindex[,1]),]
 
 
 for(i in 1:nrow(ERAindex)) {
   
   cat(sprintf('\rDate %d of %d',
-              i, max(interpTracksWind$ERAind)))
+              i, nrow(ERAindex)))
   
   path <- fls[ERAindex[i,1]]
   
-  trackInd <- which(interpTracksWind$ERAfile==ERAindex[i,1] & interpTracksWind$ERAind==ERAindex[i,2])
+  trackInd <- which(interpTracksWind$file==ERAindex[i,1] & interpTracksWind$fileID==ERAindex[i,2])
   
   windR  <- rotate(stack(brick(m10path, varname = "u10", level = 1)[[i]],
                          brick(m10path, varname = "v10", level = 1)[[i]],
@@ -116,24 +118,18 @@ for(i in 1:nrow(ERAindex)) {
   }
 
   
-  if(i==1 | Date != as.Date(median(interpTracks$tms[trackInd]))) {
-    Date <- as.Date(median(interpTracks$tms[trackInd]))
-    indSnow <- which(dates==Date)
+    indSnow <- which(datesSnow==as.Date(interpTracks$tms[trackInd][1]))
+    tab0    <- readLines(fls.gz[indSnow])
+    ind     <- unlist(suppressWarnings(parallel::mclapply(tab0, function(x) is.na(as.numeric(gsub(" ", "", x))), mc.cores = 5)))
+    tab     <- tab0[-which(ind)]
     
-    tab0 <- readLines(fls.gz[indSnow])
-    ind <- unlist(suppressWarnings(parallel::mclapply(tab0, function(x) is.na(as.numeric(gsub(" ", "", x))), mc.cores = 5)))
-    tab <- tab0[-which(ind)]
-    
-    z = do.call("rbind", parallel::mclapply(tab, function(.line) as.numeric(strsplit(.line, '')[[1]]), mc.cores = 5))
-    r0 <- raster(z[nrow(z):1,], crs = CRS(prj))
+    z   <-  do.call("rbind", parallel::mclapply(tab, function(.line) as.numeric(strsplit(.line, '')[[1]]), mc.cores = 5))
+    r0  <- raster(z[nrow(z):1,], crs = CRS(prj))
     extent(r0) <- c(-12126597.0, -12126597.0 + 1024*23684.997, -12126840.0, -12126597.0 + 1024*23684.997)
-  }
-  
-  uOut <- stackApply(windR[[c(1,3,5)]], indices=c(1,1,1), fun=median, na.rm = T)
-  uOut <- mask(uOut, as(ocean, "Spatial"))
-  
-  vOut <- stackApply(windR[[c(2,4,6)]], indices=c(1,1,1), fun=median, na.rm = T)
-  vOut[is.na(uOut[])] <- NA
+
+  msk  <- mask(windR, as(ocean, "Spatial"))
+  uOut <- msk[[1]]; uOut[] <- future_apply(msk[[c(1,3,5)]][], MARGIN = 1L, FUN = median)
+  vOut <- msk[[1]]; vOut[] <- future_apply(msk[[c(2,4,6)]][], MARGIN = 1L, FUN = median)
   
   snowe <- raster::extract(r0, project(coordinates(snow)[is.na(vOut[]),], prj))
   snow  <- vOut; snow[] <- NA; snow[is.na(vOut[])] <- ifelse(snowe==4, 1, NA)
@@ -141,8 +137,10 @@ for(i in 1:nrow(ERAindex)) {
   dateBrick <- brick(uOut, vOut, snow)
   
   writeRaster(dateBrick, paste0("~/Google Drive/Science/ProjectsData/MovSim/geoTiffs/WindSnow_", i, ".tif"), options = c('TFW=YES'), overwrite=TRUE)
-  
+ 
+  if(i/100 == floor(i/100) | i==nrow(ERAindex)) save(interpTracksWind, file = "~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
+
+   
 }
 
-save(interpTracksWind, file = "~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
 
