@@ -53,11 +53,11 @@ blues  <- colorRampPalette(pal_seeblau)
 greens <- colorRampPalette(pal_seegruen)
 
 ## anlge init
-rot <- cbind(seq(0, -40, length = nrow(TIFFindex)), 
+rot <- cbind(seq(0,  18, length = nrow(TIFFindex)), 
              seq(0, 125, length = nrow(TIFFindex)))
 
 ## wind track init
-nrTracks <-  1000
+nrTracks <-  750
 
 for(i in 1:nrow(TIFFindex)) {
   
@@ -139,13 +139,13 @@ for(i in 1:nrow(TIFFindex)) {
   titel_image <- magick::image_read(glue::glue("~/Desktop/tmp/title_{i}.png"))
   
   magick::image_append(c(titel_image, world_image), stack = TRUE) %>% 
-    magick::image_write(glue::glue("~/Desktop/tmp/full_image_{i}.png"))
+    magick::image_write(glue::glue("~/Google Drive/tmp/full_image_{i}.png"))
   
   file.remove(c(glue::glue("~/Desktop/tmp/globe_{i}.png"), glue::glue("~/Desktop/tmp/title_{i}.png")))
 }
 
-av::av_encode_video(glue::glue("~/Desktop/tmp/full_image_{1:225}.png"), 
-                    output = "~/Desktop/globe_viz.mp4", framerate = 15)
+av::av_encode_video(glue::glue("~/Google/tmp/full_image_{1:225}.png"), 
+                    output = "~/Google/globe_viz.mp4", framerate = 15)
 
 
 # generate_studio(material=diffuse(color = "grey10")) %>%
