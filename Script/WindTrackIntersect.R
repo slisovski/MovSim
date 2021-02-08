@@ -74,7 +74,7 @@ names(interpTracksWind) <- c(names(interpTracks), c("m10u", "m10v", "p700u", "p7
 
 ## snow Cover (24km)
 fls.gz <- list.files("/Volumes/slisovski/RemoteSensedData/IMS_DailyNHSnowIceAnalysis/24km/2020/", pattern = ".asc.gz", recursive = T,  full.names = T)
-datesSnow  <- as.Date(as.POSIXct(unlist(lapply(strsplit(fls.gz, "ims"), function(x) strsplit(x[[2]], "_24km")))[c(TRUE, FALSE)], format = "%Y%j"))
+datesSnow  <- as.POSIXct(sapply(strsplit(fls.gz, "ims"), function(x) sapply(strsplit(x[[2]], "_24km"), function(z) z[[1]])), format = "%Y%j", tz = "GMT")
 prj <- "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-80 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356257 +units=m +no_defs"
 
 
@@ -89,9 +89,9 @@ tms10    <- as.POSIXct(nf$var[[1]]$dim[[3]]$vals*60*60, "1900-01-01", tz = "GMT"
 nc_close(nf)
 tms10ind <- mapply(function(x) which.min(abs(x-tms10)), x = interpTracks$tms[!duplicated(interpTracks$ERAind)])
 
-ERAindex <- cbind(interpTracksWind$file, interpTracksWind$fileID)[!duplicated(paste(interpTracksWind$file, interpTracksWind$fileID)),]
-ERAindex <- ERAindex[order(ERAindex[,1]),]
-
+ERAindex      <- data.frame(file = interpTracksWind$file, ind = interpTracksWind$fileID)[!duplicated(paste(interpTracksWind$file, interpTracksWind$fileID)),]
+ERAindex$tms  <- as.POSIXct(apply(ERAindex, 1, function(x) fileList$tms[fileList$file==x[1] & fileList$fileID==x[2]]), origin = "1970-01-01", tz = "GMT")
+ERAindex$snow <- sapply(ERAindex$tms, function(x) which.min(abs(x-datesSnow)))
 
 for(i in 1:nrow(ERAindex)) {
   
@@ -117,9 +117,7 @@ for(i in 1:nrow(ERAindex)) {
     interpTracksWind[trackInd, which(names(interpTracksWind)%in%names(windR))] <- raster::extract(windR, interpTracks[trackInd, c("location.long", "location.lat")])
   }
 
-  
-    indSnow <- which(datesSnow==as.Date(interpTracks$tms[trackInd][1]))
-    tab0    <- readLines(fls.gz[indSnow])
+    tab0    <- readLines(fls.gz[ERAindex$snow[i]])
     ind     <- unlist(suppressWarnings(parallel::mclapply(tab0, function(x) is.na(as.numeric(gsub(" ", "", x))), mc.cores = 5)))
     tab     <- tab0[-which(ind)]
     

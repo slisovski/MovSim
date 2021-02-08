@@ -16,8 +16,8 @@ ocean_map  <- st_sym_difference(st_as_sfc(st_bbox(c(xmin = -180, xmax = 180, yma
 
 
 ### tracks
-load("~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracks.rda")
-head(interpTracks)
+load("~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
+head(interpTracksWind)
 
 
 
@@ -25,12 +25,12 @@ head(interpTracks)
 start <- as.POSIXct("2020-03-01", tz = "GMT")
 end   <- as.POSIXct("2020-03-15", tz = "GMT")
 
-tmTab <- subset(interpTracks, tms>=start & tms<=end & !duplicated(tms), select = c("tms", "ERAfile", "ERAind"))
+tmTab <- subset(interpTracks, tms>=start & tms<=end & !duplicated(tms), select = c("tms", "file", "fileID"))
 
-ERAindex  <- expand.grid(unique(interpTracks$ERAfile), unique(interpTracks$ERAind))
-ERAindex  <- ERAindex[order(ERAindex[,1]),]
+ERAindex <- cbind(interpTracksWind$file, interpTracksWind$fileID)[!duplicated(paste(interpTracksWind$file, interpTracksWind$fileID)),]
+ERAindex <- ERAindex[order(ERAindex[,1]),]
 
-TIFFindex <- data.frame(tms = tmTab$tms, ind = apply(tmTab[,c("ERAfile", "ERAind")], 1, function(x) which(x[1]==ERAindex[,1] & x[2]==ERAindex[,2]))) 
+TIFFindex <- data.frame(tms = tmTab$tms, ind = apply(tmTab[,c("file", "fileID")], 1, function(x) which(x[1]==ERAindex[,1] & x[2]==ERAindex[,2]))) 
 
 ### sun zenith
 rSun    <- raster(xmn = -180, xmx = 180, ymn = -90, ymx = 90, res = 1)
@@ -53,11 +53,11 @@ blues  <- colorRampPalette(pal_seeblau)
 greens <- colorRampPalette(pal_seegruen)
 
 ## anlge init
-rot <- cbind(seq(0, -18, length = nrow(TIFFindex)), 
+rot <- cbind(seq(0, -40, length = nrow(TIFFindex)), 
              seq(0, 125, length = nrow(TIFFindex)))
 
 ## wind track init
-nrTracks <-  50
+nrTracks <-  1000
 
 for(i in 1:nrow(TIFFindex)) {
   
@@ -80,10 +80,10 @@ for(i in 1:nrow(TIFFindex)) {
   }
   
   ## tracks
-  new <- array(dim = c(20, 2, nrTracks))
+  new <- array(dim = c(8, 2, nrTracks))
   probWind <- spdR[!is.na(spdR[])]
-  new[1,,] <- t(coordinates(spdR)[!is.na(spdR[]),][sample(1:sum(!is.na(spdR[])), nrTracks, 
-                                                          prob = ((probWind-min(probWind)) / (max(probWind) - min(probWind))) * (1-0.5)*0.5),])
+  new[1,,] <- t(coordinates(spdR)[!is.na(spdR[]),][sample(1:sum(!is.na(spdR[])), nrTracks),]) #, 
+                                                          # prob = ((probWind-min(probWind)) / (max(probWind) - min(probWind))) * (1-0.75)*0.75),])
   
   if(i==1) tracks <- new else tracks <- abind(tracks, new, along = 3)
   
@@ -111,7 +111,7 @@ for(i in 1:nrow(TIFFindex)) {
     if(is.matrix(tmp))   st_linestring(tmp)
   })
   
-  t <- st_wrap_dateline(st_sf(st_sfc(st_multilinestring(ls[!sapply(ls, is.null)]), crs = 4326))) %>% suppressMessages(st_intersection(ocean_map))
+  t <- suppressMessages(st_wrap_dateline(st_sf(st_sfc(st_multilinestring(ls[!sapply(ls, is.null)]), crs = 4326))) %>% st_intersection(ocean_map))
   
   grTracks <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(st_coordinates(t)[,1:2]), st_coordinates(t)[,3]), function(x) {
     x[,2] <- x[,2]*-1
@@ -124,15 +124,13 @@ for(i in 1:nrow(TIFFindex)) {
     add_object(sphere(x = 0, y = 7, radius=0.9999, angle=c(rot[i,1],rot[i,2],0),
                       material = glossy(gloss=0.3, image_texture =  img))) %>%
     add_object(group_objects(grTracks)) %>%
-    add_object(sphere(x = 18, y = TIFFindex$z[i]+7+(rot[i,1]/60)*9, z = 7, radius=7,
-                      material = light(intensity=9))) %>%
+    add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
     render_scene(width=450, height=450, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
-                 samples= 200, clamp_value=10, lookfrom=c(1,7,10), lookat=c(0,7,0), camera_up = c(0,1,0),
-                 filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
+                 samples= 200, clamp_value=10, lookfrom=c(1,7,10), lookat=c(0,7,0), camera_up = c(0,1,0), filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
   
   
   title_mat = matrix(0,60,450) %>%
-    add_title(title_text = glue::glue("Bar-tailed godwit migration - {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
+    add_title(title_text = glue::glue("Bar-tailed godwit migration          {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
               title_bar_alpha = 1, title_bar_color = "grey30", title_size = 20,
               title_color = "white", filename=glue::glue("~/Desktop/tmp/title_{i}.png"))
   
@@ -148,3 +146,14 @@ for(i in 1:nrow(TIFFindex)) {
 
 av::av_encode_video(glue::glue("~/Desktop/tmp/full_image_{1:225}.png"), 
                     output = "~/Desktop/globe_viz.mp4", framerate = 15)
+
+
+# generate_studio(material=diffuse(color = "grey10")) %>%
+#  add_object(sphere(x = 0, y = 1, radius=0.9999, angle=c(0,0,0),
+#                    material = glossy(gloss=0.3, image_texture =  img))) %>%
+#   add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
+#   render_scene(width=1200, height=1200, aperture = 0, fov = 15, sample_method = "stratified", parallel = TRUE,
+#               samples= 4000, clamp_value=10, lookat = c(0,1,0), lookfrom = c(0,1,10), camera_up = c(0,1,0))
+
+
+
