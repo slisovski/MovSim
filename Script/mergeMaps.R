@@ -6,6 +6,7 @@ library(rayrender)
 library(sphereplot)
 library(sf)
 library(rayimage)
+library(RColorBrewer)
 
 ### global elevation model
 topo <- raster("~/Google Drive/GeoDat/ETOPO1_Ice_g_geotiff.tif")
@@ -33,6 +34,21 @@ load("~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
   tracksMap$id <- sapply(strsplit(row.names(tracksMap), "[.]"), function(x) x[[1]])
 
   
+# kk <- aggregate(tracksMap$dist, by = list(as.Date(tracksMap$timestamp)), FUN = function(x) sum(x>20, na.rm = T)/length(x))  
+# plot(kk)
+# 
+# abline(v = as.Date(as.POSIXct(c("2020-03-01", "2020-04-14"))))
+# abline(v = as.Date(as.POSIXct(c("2020-04-25", "2020-06-05"))))
+# abline(v = as.Date(as.POSIXct(c("2020-09-08", "2020-10-04"))))
+
+seq1 <- seq(as.POSIXct("2020-03-01", tz = "GMT"), as.POSIXct("2020-04-14", tz = "GMT"), by = "day")
+seq2 <- seq(as.POSIXct("2020-04-25", tz = "GMT"), as.POSIXct("2020-06-05", tz = "GMT"), by = "day")  
+seq3 <- seq(as.POSIXct("2020-09-08", tz = "GMT"), as.POSIXct("2020-10-04", tz = "GMT"), by = "day")  
+  
+  datesTab <- data.frame(date    = min(seq1)+(1:length(c(seq1, seq2, seq3)))*24*60*60,
+                         indDate = as.POSIXct(c(seq1, seq2, seq3), origin = "1970-01-01"),
+                         leg     = c(rep(1, length(seq1)),rep(2, length(seq2)),rep(3, length(seq3))))
+
 # plot(land_map, xlim = c(160, 200))  
 # points(tracksMap$location.long, tracksMap$location.lat, pch = 16, col = ifelse(is.infinite(abs(tracksMap$'5')), "grey90", "orange"))
 
@@ -69,7 +85,7 @@ rot <- data.frame(long  = seq(130, 145, length = nrow(TIFFindex)),
 ## wind track init
 nrTracks <-  100
 
-for(i in c(1, 292:nrow(TIFFindex))) {
+for(i in 1:nrow(TIFFindex)) {
   
   if(i==1 || TIFFindex$ind[i-1]!=TIFFindex$ind[i]) {
     
@@ -151,33 +167,47 @@ for(i in c(1, 292:nrow(TIFFindex))) {
   grLines <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(st_coordinates(t_lines)[,1:2]), st_coordinates(t_lines)[,3]), function(x) {
     x[,2] <- x[,2]*-1
     sph2car(cbind(x,1))[,c(1,3,2)] %>%
-      path(x = 0, y = 7, material = diffuse(color="orange"), width = 0.005, angle=c(180,rot[i,1],0))
+      path(x = 0, y = 7, material = diffuse(color="grey50"), width = 0.005, angle=c(180,rot[i,1],0))
   }, mc.cores = 4))
   
   
   
   
   ### Plot1 ----
-  png(glue::glue("~/Desktop/tmp/plot1_{i}.png"), width = 500, height = 300, res = 100)
-  opar1 <- par(mfrow = c(1,3), mar = c(4,2,1,1), oma = c(1,1,1,1), bty = "n")
-  
-  plot(NA, ylim = c(1,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", xlab = "",
+  png(glue::glue("~/Desktop/tmp/plot1_{i}.png"), width = 700, height = 450, res = 100)
+  opar1 <- par(mfrow = c(1,3), mar = c(3,1,1,1), oma = c(1,8,1,0), bty = "n")
+
+  plot(NA, ylim = c(-8,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", xlab = "",
        ylab = "")
   mtext("Leg 1", 3, cex = 0.8)
   
   out1 <- do.call("rbind", lapply(unique(tracksMap$id), function(x) {
     tmp <- subset(realTracks, id == x)
     if(nrow(tmp)>0) {
-     points(tmp$`5`, jitter(rep(which(tmp$id[1]==unique(tracksMap$id)), nrow(tmp)), 1), pch = 16,
+     points(tmp$`5`, jitter(rep(which(tmp$id[1]==unique(tracksMap$id)), nrow(tmp)), 0.2), pch = 16,
             col = adjustcolor(cls[tmp$colID], alpha.f = 0.6))
-     data.frame(tmp$`5`[nrow(tmp)], which(tmp$id[1]==unique(tracksMap$id)), cls[tmp$colID[nrow(tmp)]])
+     data.frame(s = tmp$`5`, id = which(tmp$id[1]==unique(tracksMap$id)), col = cls[tmp$colID], type = c(rep(1, nrow(tmp)-1),2))[!is.na(tmp$`5`) & !is.infinite(abs(tmp$`5`)),]
     }
   }))
   
-  points(out1[,1], out1[,2], pch = 21, bg = out1[,3],  col = "grey30", lwd = 1.6)
+  with(subset(out1, type == 2), points(s, id, pch = 21, bg = col,  col = "grey30", lwd = 1.6))
+  
+  oparXPD <- par(xpd = NA, mar = par()$mar + c(2.5, 0, 1, 0))
+  rect(-44, -8.5, 44, 16, border = "grey70")
+  par(oparXPD)
+  
+  if(nrow(out1)>10) {
+  d <- density(out1$s)
+  
+  par(new = TRUE)
+  plot(NA, ylim = c(0,0.35), xlim = c(-40, 40), yaxt = "n", xlab = "", ylab = "")
+  polygon(c(d$x, rev(d$x)), c(d$y, rep(0, length(d$y))), col = "burlywood", border = NA)
+  lines(d$x, d$y, col = "grey40")
+  }
   
   plot(NA, ylim = c(1,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", 
-       xlab = "Wind support",  ylab = "")
+       xlab = "",  ylab = "")
+  mtext("Wind support", 1, cex = 1.2, line = 3)
   mtext("Leg 2", 3, cex = 0.8)
   
   plot(NA, ylim = c(1,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", 
@@ -189,10 +219,39 @@ for(i in c(1, 292:nrow(TIFFindex))) {
   dev.off()
   
   ### Plot2 ----
-  png(glue::glue("~/Desktop/tmp/plot2_{i}.png"), width = 500, height = 300, res = 100)
-  opar2 <- par(mfrow = c(1,1), bty = "n")
+  png(glue::glue("~/Desktop/tmp/plot2_{i}.png"), width = 700, height = 450, res = 100)
+  opar2 <- par(mar = c(3,6,1,1))
   
-  plot(1,1,type = "n", xaxt = "n", yaxt = "n", xlab = "", ylab = "")
+  plot(NA, xlim = range(datesTab$date), ylim = c(0, 3200), las = 1, ylab = "", xlab = "", xaxt = "n", 
+       yaxt = "n")
+  axis(2, at = c(10, 779, 1502, 3130), las = 1)
+  mtext("Altitude with max. support (a.s.l.)", 2, line = 4, cex = 1.2)
+  
+  brks <- as.numeric(datesTab$date)[suppressWarnings(which(datesTab$leg!=datesTab$leg[-1]))][1:2]
+  abline(v = brks, lty = 3, col = "grey80")
+  
+  axis(1, at = as.numeric(datesTab$date[c(TRUE, rep(FALSE, 10))]), labels = as.Date(datesTab$indDate)[c(TRUE, rep(FALSE, 10))])
+  plotrix::axis.break(1, brks[1], style="slash")
+  plotrix::axis.break(1, brks[2], style="slash")
+  plotrix::axis.break(3, brks[1], style="slash")
+  plotrix::axis.break(3, brks[2], style="slash")
+  
+  
+  datAlt <- data.frame(t = as.numeric(realTracks[!is.na(realTracks$`5`) & realTracks$dist > 25, "timestamp"]),
+                       a = unlist(apply(realTracks[!is.na(realTracks$`5`) & realTracks$dist > 25, c('1', '4', '3', '2')], 1, function(x) {
+                            if(any(!is.na(x) | !is.nan(x))) c(10, 779, 1502, 3130)[which.max(x)] else NA })))
+  
+  points(datAlt$t, jitter(datAlt$a, 0.2), pch = 16, col = adjustcolor("grey40", alpha.f = 0.4))
+  
+  if(nrow(datAlt)>10) {
+  mod <- mgcv::gam(a~s(t), data = datAlt)
+  fitt <- data.frame(t = seq(min(datAlt$t), max(datAlt$t), by = 12*60*60))
+  fit  <- predict(mod, newdata = fitt, type="response", se=T)$fit
+  se   <- predict(mod, newdata=fitt, type="response", se=T)$se.fit
+  
+  polygon(c(fitt$t, rev(fitt$t)), c(fit-1.96*se, rev(fit+1.96*se)), border = NA, col = adjustcolor("grey50", alpha.f = 0.5))
+  lines(fitt$t, fit, lwd = 2, col = "orange")
+  }
   par(opar2)
   dev.off()
   
@@ -204,25 +263,25 @@ for(i in c(1, 292:nrow(TIFFindex))) {
     add_object(group_objects(grLines)) %>%
     add_object(group_objects(grPoints)) %>%
     add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
-    render_scene(width=500, height=600, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
-                 samples= 200, clamp_value=10, lookfrom=c(rot[i,2],rot[i,3],rot[i,4]), lookat=c(0,7,0), camera_up = c(0,1,0), filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
+    render_scene(width=700, height=900, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
+                 samples= 100, clamp_value=10, lookfrom=c(rot[i,2],rot[i,3],rot[i,4]), lookat=c(0,7,0), camera_up = c(0,1,0), filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
   
   
-  title_mat = matrix(0,50,1000) %>%
+  title_mat = matrix(0,55,1400) %>%
     add_title(title_text = glue::glue("Bar-tailed godwit migration         {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
-              title_bar_alpha = 1, title_bar_color = "grey30", title_size = 19,
+              title_bar_alpha = 1, title_bar_color = "grey30", title_size = 25,
               title_color = "white", filename=glue::glue("~/Desktop/tmp/title_{i}.png"))
   
-  title_mat = matrix(1, 45, 1000) %>%
-    add_title(title_text = glue::glue("by: Simeon Lisovski; traking data from: Jesse Conklin, Phil Battley; wind data: ECWMF ERA5; Land topography: ETOPO2; Snow Cover: IMS.                            Rcode = {'https://github.com/slisovski/MovSim'}"), 
-              title_bar_alpha = 1, title_bar_color = "grey30", title_size = 10,
-              title_color = "white", filename=glue::glue("~/Desktop/tmp/footer_{i}.png"))
+  # title_mat = matrix(1, 45, 1400) %>%
+  #   add_title(title_text = glue::glue("by: Simeon Lisovski; traking data from: Jesse Conklin, Phil Battley; wind data: ECWMF ERA5; Land topography: ETOPO2; Snow Cover: IMS.                            Rcode = {'https://github.com/slisovski/MovSim'}"), 
+  #             title_bar_alpha = 1, title_bar_color = "grey30", title_size = 10,
+  #             title_color = "white", filename=glue::glue("~/Desktop/tmp/footer_{i}.png"))
   
   titel_image <- magick::image_read(glue::glue("~/Desktop/tmp/title_{i}.png"))
   world_image <- magick::image_read(glue::glue("~/Desktop/tmp/globe_{i}.png"))
   plt1_imge   <- magick::image_read(glue::glue("~/Desktop/tmp/plot1_{i}.png"))
   plt2_imge   <- magick::image_read(glue::glue("~/Desktop/tmp/plot2_{i}.png"))
-  foot_image  <- magick::image_read(glue::glue("~/Desktop/tmp/footer_{i}.png"))
+  foot_image  <- magick::image_read(glue::glue("~/Desktop/tmp/footer.png"))
   
   magick::image_append(c(titel_image,
       magick::image_append(
