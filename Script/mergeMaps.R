@@ -17,7 +17,7 @@ ocean_sample <- st_sfc(st_polygon(list(matrix(c(-80, -80, 89, 89, -80,-90, 90, 9
 
 ### tracks
 load("~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
-head(interpTracksWind)
+# head(interpTracksWind)
 
   ### wind support
   tracksMap <- cbind(interpTracksWind, t(apply(interpTracksWind[,c(8,9,10,13:20)], 1, function(x) {
@@ -52,7 +52,7 @@ TIFFindex <- data.frame(tms = tmTab$timestamp, ind = apply(tmTab[,c("file", "fil
   
 ## col inds
 cls <- brewer.pal(11, "RdYlGn")
-tracksMap$colID <- cut(tracksMap$'5', seq(-26, 26, length = length(cls)), labels = FALSE)
+tracksMap$colID <- cut(tracksMap$'5', seq(-40, 40, length = length(cls)), labels = FALSE)
 
 
 ## global colors
@@ -67,9 +67,9 @@ rot <- data.frame(long  = seq(130, 145, length = nrow(TIFFindex)),
 
 
 ## wind track init
-nrTracks <-  50
+nrTracks <-  100
 
-for(i in 1:nrow(TIFFindex)) {
+for(i in c(1, 292:nrow(TIFFindex))) {
   
   if(i==1 || TIFFindex$ind[i-1]!=TIFFindex$ind[i]) {
     
@@ -132,7 +132,7 @@ for(i in 1:nrow(TIFFindex)) {
   realTracks <- subset(tracksMap, timestamp<=TIFFindex[i,1])
   last       <- lapply(unique(realTracks$id), function(x) realTracks[realTracks$id==x,][sum(realTracks$id==x),])
 
-  t_real <- st_wrap_dateline(st_sf(st_sfc(st_multipoint(as.matrix(do.call("rbind", last)[,c("location.long", "location.lat")]))), crs = 4326))
+  t_real <- st_wrap_dateline(st_sf(st_sfc(st_multipoint(as.matrix(do.call("rbind", last)[!is.na(do.call("rbind", last)[,"location.long"]),c("location.long", "location.lat")]))), crs = 4326))
    
   grPoints <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(cbind(st_coordinates(t_real)[,1:2], id = 1:nrow(st_coordinates(t_real)), colID = do.call("rbind", last)$colID)),
                                                         1:nrow(st_coordinates(t_real))),
@@ -141,30 +141,104 @@ for(i in 1:nrow(TIFFindex)) {
               sphere(x = sp[1], y = 7+sp[2], z = sp[3], material = diffuse(color=ifelse(is.na(x$colID), "grey30", cls[x$colID])), radius = 0.02)
             }, mc.cores = 4))
   
+  ls_lines <- lapply(unique(realTracks$id), function(x) {
+    tmp <- subset(realTracks, id==x & !is.na(location.long), select = c("location.long", "location.lat"))
+    if(nrow(tmp)>2)   st_linestring(as.matrix(tmp))
+  })
   
+  t_lines <- st_wrap_dateline(st_sf(st_sfc(st_multilinestring(ls_lines[!sapply(ls_lines, is.null)]), crs = 4326)))
+  
+  grLines <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(st_coordinates(t_lines)[,1:2]), st_coordinates(t_lines)[,3]), function(x) {
+    x[,2] <- x[,2]*-1
+    sph2car(cbind(x,1))[,c(1,3,2)] %>%
+      path(x = 0, y = 7, material = diffuse(color="orange"), width = 0.005, angle=c(180,rot[i,1],0))
+  }, mc.cores = 4))
+  
+  
+  
+  
+  ### Plot1 ----
+  png(glue::glue("~/Desktop/tmp/plot1_{i}.png"), width = 500, height = 300, res = 100)
+  opar1 <- par(mfrow = c(1,3), mar = c(4,2,1,1), oma = c(1,1,1,1), bty = "n")
+  
+  plot(NA, ylim = c(1,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", xlab = "",
+       ylab = "")
+  mtext("Leg 1", 3, cex = 0.8)
+  
+  out1 <- do.call("rbind", lapply(unique(tracksMap$id), function(x) {
+    tmp <- subset(realTracks, id == x)
+    if(nrow(tmp)>0) {
+     points(tmp$`5`, jitter(rep(which(tmp$id[1]==unique(tracksMap$id)), nrow(tmp)), 1), pch = 16,
+            col = adjustcolor(cls[tmp$colID], alpha.f = 0.6))
+     data.frame(tmp$`5`[nrow(tmp)], which(tmp$id[1]==unique(tracksMap$id)), cls[tmp$colID[nrow(tmp)]])
+    }
+  }))
+  
+  points(out1[,1], out1[,2], pch = 21, bg = out1[,3],  col = "grey30", lwd = 1.6)
+  
+  plot(NA, ylim = c(1,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", 
+       xlab = "Wind support",  ylab = "")
+  mtext("Leg 2", 3, cex = 0.8)
+  
+  plot(NA, ylim = c(1,length(unique(tracksMap$id))), xlim = c(-40, 40), yaxt = "n", 
+       xlab = "",  ylab = "")
+  mtext("Leg 3", 3, cex = 0.8)
+  
+  
+  par(opar1)
+  dev.off()
+  
+  ### Plot2 ----
+  png(glue::glue("~/Desktop/tmp/plot2_{i}.png"), width = 500, height = 300, res = 100)
+  opar2 <- par(mfrow = c(1,1), bty = "n")
+  
+  plot(1,1,type = "n", xaxt = "n", yaxt = "n", xlab = "", ylab = "")
+  par(opar2)
+  dev.off()
+  
+  #### render ----
   generate_studio(material=diffuse(color = "grey10")) %>%
     add_object(sphere(x = 0, y = 7, radius=0.9999, angle = c(0, rot[i,1], 0),
                       material = glossy(gloss=0.3, image_texture =  img))) %>%
     add_object(group_objects(grTracks)) %>%
+    add_object(group_objects(grLines)) %>%
     add_object(group_objects(grPoints)) %>%
     add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
-    render_scene(width=350, height=350, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
+    render_scene(width=500, height=600, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
                  samples= 200, clamp_value=10, lookfrom=c(rot[i,2],rot[i,3],rot[i,4]), lookat=c(0,7,0), camera_up = c(0,1,0), filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
   
   
-  title_mat = matrix(0,60,350) %>%
-    add_title(title_text = glue::glue("Title:  {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
-              title_bar_alpha = 1, title_bar_color = "grey30", title_size = 20,
+  title_mat = matrix(0,50,1000) %>%
+    add_title(title_text = glue::glue("Bar-tailed godwit migration         {format(TIFFindex[i,1], '%Y-%m-%d')}"), 
+              title_bar_alpha = 1, title_bar_color = "grey30", title_size = 19,
               title_color = "white", filename=glue::glue("~/Desktop/tmp/title_{i}.png"))
   
+  title_mat = matrix(1, 45, 1000) %>%
+    add_title(title_text = glue::glue("by: Simeon Lisovski; traking data from: Jesse Conklin, Phil Battley; wind data: ECWMF ERA5; Land topography: ETOPO2; Snow Cover: IMS.                            Rcode = {'https://github.com/slisovski/MovSim'}"), 
+              title_bar_alpha = 1, title_bar_color = "grey30", title_size = 10,
+              title_color = "white", filename=glue::glue("~/Desktop/tmp/footer_{i}.png"))
   
-  world_image <- magick::image_read(glue::glue("~/Desktop/tmp/globe_{i}.png"))
   titel_image <- magick::image_read(glue::glue("~/Desktop/tmp/title_{i}.png"))
+  world_image <- magick::image_read(glue::glue("~/Desktop/tmp/globe_{i}.png"))
+  plt1_imge   <- magick::image_read(glue::glue("~/Desktop/tmp/plot1_{i}.png"))
+  plt2_imge   <- magick::image_read(glue::glue("~/Desktop/tmp/plot2_{i}.png"))
+  foot_image  <- magick::image_read(glue::glue("~/Desktop/tmp/footer_{i}.png"))
   
-  magick::image_append(c(titel_image, world_image), stack = TRUE) %>% 
-    magick::image_write(glue::glue("~/Google Drive/tmp/full_image_{i}.png"))
+  magick::image_append(c(titel_image,
+      magick::image_append(
+        c(world_image,
+         magick::image_append(c(plt1_imge, plt2_imge), stack = TRUE)),
+      ),
+      foot_image), stack = TRUE) %>% 
+    magick::image_write(glue::glue("~/Desktop/tmp/full_image_{i}.png"))
   
-  file.remove(c(glue::glue("~/Desktop/tmp/globe_{i}.png"), glue::glue("~/Desktop/tmp/title_{i}.png")))
+  suppressWarnings({
+  file.remove(c(glue::glue("~/Desktop/tmp/title_{i}.png"),
+                glue::glue("~/Desktop/tmp/globe_{i}.png"), 
+                glue::glue("~/Desktop/tmp/plot1_{i}.png"),
+                glue::glue("~/Desktop/tmp/plot2_{i}.png"),
+                glue::glue("~/Desktop/tmp/footer_{i}.png")
+                ))})
 }
 
 # av::av_encode_video(glue::glue("~/Google Drive//tmp/full_image_{1:121}.png"), 
