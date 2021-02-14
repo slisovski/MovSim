@@ -9,33 +9,35 @@ library(rayimage)
 library(RColorBrewer)
 
 ### global elevation model
-topo <- raster("~/Google Drive/GeoDat/ETOPO1_Ice_g_geotiff.tif")
+topo <- raster("/bioing/user/slisovsk/MovSimData/ETOPO1_Ice_g_geotiff.tif")
 
 ### Map
-land_map     <- read_sf("~/Google Drive/GeoDat/NaturalEarth/50m_physical/ne_50m_land/ne_50m_land.shp") %>% st_geometry()
+land_map     <- read_sf("/bioing/user/slisovsk/MovSimData/ne_50m_land/ne_50m_land.shp") %>% st_geometry()
 ocean_map    <- st_sym_difference(st_as_sfc(st_bbox(c(xmin = -180, xmax = 180, ymax = -90, ymin = 90), crs = st_crs(4326))), st_union(land_map))
 ocean_sample <- st_sfc(st_polygon(list(matrix(c(-80, -80, 89, 89, -80,-90, 90, 90, -90,-90), ncol = 2))), crs = 4326)
 
 ### tracks
-load("~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
+load("/bioing/user/slisovsk/MovSimData/Tracks/interpTracksWind.rda")
 # head(interpTracksWind)
 
   ### wind support
-  tracksMap <- cbind(interpTracksWind, t(apply(interpTracksWind[,c(8,9,10,13:20)], 1, function(x) {
-    # x <- interpTracksWind[ 262,c(8,9,10,13:20)]
-    if(!is.na(x[1]) & x[1]>0) {
-      out <- c(RNCEP::NCEP.Tailwind(as.numeric(x[4]),  as.numeric(x[5]),  as.numeric(x[2]), as.numeric(x[3]))$fa,
-               RNCEP::NCEP.Tailwind(as.numeric(x[6]),  as.numeric(x[7]),  as.numeric(x[2]), as.numeric(x[3]))$fa,
-               RNCEP::NCEP.Tailwind(as.numeric(x[8]),  as.numeric(x[9]),  as.numeric(x[2]), as.numeric(x[3]))$fa,
-               RNCEP::NCEP.Tailwind(as.numeric(x[10]), as.numeric(x[11]), as.numeric(x[2]), as.numeric(x[3]))$fa)
-      t(data.frame(c(out, max(out, na.rm = T))))
-    } else rep(NA, 5)
-  })))
-  tracksMap$id <- sapply(strsplit(row.names(tracksMap), "[.]"), function(x) x[[1]])
-
+  # tracksMap <- cbind(interpTracksWind, id = sapply(strsplit(row.names(interpTracksWind), "[.]"), function(x) x[[1]]),
+  # t(apply(interpTracksWind[,c(8,9,10,13:20)], 1, function(x) {
+  #   # x <- interpTracksWind[ 262,c(8,9,10,13:20)]
+  #   if(!is.na(x[1]) & x[1]>0) {
+  #     out <- c(RNCEP::NCEP.Tailwind(as.numeric(x[4]),  as.numeric(x[5]),  as.numeric(x[2]), as.numeric(x[3]))$fa,
+  #              RNCEP::NCEP.Tailwind(as.numeric(x[6]),  as.numeric(x[7]),  as.numeric(x[2]), as.numeric(x[3]))$fa,
+  #              RNCEP::NCEP.Tailwind(as.numeric(x[8]),  as.numeric(x[9]),  as.numeric(x[2]), as.numeric(x[3]))$fa,
+  #              RNCEP::NCEP.Tailwind(as.numeric(x[10]), as.numeric(x[11]), as.numeric(x[2]), as.numeric(x[3]))$fa)
+  #     t(data.frame(c(out, ifelse(any(!is.na(out)), max(out, na.rm = T), NA))))
+  #   } else rep(NA, 5)
+  # })))
+  # save(tracksMap, file = "/bioing/user/slisovsk/MovSimData/Tracks/tracksMap.rda")
+  load("/bioing/user/slisovsk/MovSimData/Tracks/tracksMap.rda")
 
 # plot(land_map, xlim = c(160, 200))
-# points(tracksMap$location.long, tracksMap$location.lat, pch = 16, col = ifelse(tracksMap$dist>0, "grey90", "orange"))
+# points(tracksMap$location.long, tracksMap$location.lat, pch = 16, 
+#        col = ifelse(is.na(tracksMap$`5`), "grey90", "transparent"))
 
 ############
 ### loop ###
@@ -44,7 +46,7 @@ load("~/Google Drive/Science/ProjectsData/MovSim/Tracks/interpTracksWind.rda")
 loopTracks <- cbind(tracksMap, leg = unlist(parallel::mclapply(as.numeric(tracksMap$timestamp), function(x) {
   x <- as.POSIXct(x, origin = "1970-01-01", tz = "GMT")
   leg <- c(1,2,3)[c(x>=as.POSIXct("2020-03-01", tz = "GMT") & x<=as.POSIXct("2020-04-14", tz = "GMT"),
-                    x>=as.POSIXct("2020-04-25", tz = "GMT") & x<=as.POSIXct("2020-06-05", tz = "GMT"),
+                    x>=as.POSIXct("2020-04-25", tz = "GMT") & x<=as.POSIXct("2020-06-03", tz = "GMT"),
                     x>=as.POSIXct("2020-09-08", tz = "GMT") & x<=as.POSIXct("2020-10-04", tz = "GMT"))]
   if(length(leg)>0) leg else NA
 }, mc.cores = 5)))
@@ -52,13 +54,14 @@ loopTracks <- cbind(tracksMap, leg = unlist(parallel::mclapply(as.numeric(tracks
   
 tmTab <- subset(loopTracks, !is.na(leg) & !duplicated(timestamp), select = c("timestamp", "leg", "file", "fileID"))
   
-ERAindex <- cbind(loopTab$file, loopTab$fileID)[!duplicated(paste(loopTab$file, loopTab$fileID)),]
+ERAindex <- cbind(tmTab$file, tmTab$fileID)[!duplicated(paste(tmTab$file, tmTab$fileID)),]
 tmTab$TIFFindex <- apply(tmTab[,c("file", "fileID")], 1, function(x) which(x[1]==ERAindex[,1] & x[2]==ERAindex[,2]))
 
 
 ## col inds
-cls <- brewer.pal(11, "RdYlGn")
-loopTracks$colID <- cut(loopTab$'5', seq(-40, 40, length = length(cls)), labels = FALSE)
+clsF <- scales::colour_ramp(brewer.pal(11, "RdYlGn"))
+cls  <- clsF(seq(0, 1, length = 100))
+loopTracks$colID <- cut(loopTracks$'5', seq(-42, 42, length = length(cls)), labels = FALSE)
 
 
 ## global colors
@@ -66,10 +69,10 @@ blues  <- colorRampPalette(pal_seeblau)
 greens <- colorRampPalette(pal_seegruen)
 
 ## anlge init
-rot <- data.frame(long  = seq(130, 145, length = nrow(TIFFindex)),
-                  fromx = seq(3,     0, length = nrow(TIFFindex)),
-                  fromy = seq(7,     9, length = nrow(TIFFindex)),
-                  fromz = seq(10,  8.5, length = nrow(TIFFindex)))
+rot <- data.frame(long  = seq(130, 145, length = nrow(tmTab)),
+                  fromx = seq(3,     0, length = nrow(tmTab)),
+                  fromy = seq(7,     9, length = nrow(tmTab)),
+                  fromz = seq(10,  8.5, length = nrow(tmTab)))
 
 
 rot <- data.frame(long = rep(NA, nrow(tmTab)), fromx = NA, fromy = NA, fromz = NA)
@@ -81,13 +84,13 @@ rot[max(which(tmTab$leg==3)),] <- c(115, 0,  8, 10)
 rot <- apply(rot, 2, function(x) zoo::na.approx(x, rule = 3))
 
 ## wind track init
-nrTracks <-  75
+nrTracks <-  150
 
 for(i in 1:nrow(tmTab)) {
   
   if(i==1 || tmTab$TIFFindex[i-1]!=tmTab$TIFFindex[i]) {
     
-    tmpBrick <- brick(paste0("~/Google Drive/Science/ProjectsData/MovSim/geoTiffs/WindSnow_", tmTab$TIFFindex[i], ".tif"))
+    tmpBrick <- brick(paste0("/bioing/user/slisovsk/MovSimData/geoTiffs/WindSnow_", tmTab$TIFFindex[i], ".tif"))
     spdR     <- sqrt(tmpBrick[[1]]^2 + tmpBrick[[2]]^2)
     
     top  <- spdR; top[] <- NA
@@ -103,17 +106,17 @@ for(i in 1:nrow(tmTab)) {
     
   }
   
-  ## tracks ----
+  # tracks ----
   new <- array(dim = c(10, 2, nrTracks))
   new[1,,] <- t(st_coordinates(suppressMessages(st_sample(ocean_map %>% st_difference(ocean_sample), size = dim(new)[3]))))
-  
-  if(i==1) tracks <- new else tracks <- abind(tracks, new, along = 3)
+
+  if(i %in% which(!duplicated(tmTab$leg))) tracks <- new else tracks <- abind(tracks, new, along = 3)
 
   ind <- do.call("rbind", parallel::mclapply(1:dim(tracks)[3], function(x) {
     ind   <- max(which(!is.na(tracks[,1,x])))
     matrix(c(ind, tracks[ind,,x]), ncol = 3)
   }, mc.cores = parallel::detectCores()))
-  
+
   wnd  <- extract(tmpBrick[[1:2]], ind[,2:3])
   dir  <- atan2(wnd[,1], wnd[,2]) * (180/pi)
   spd  <- sqrt(wnd[,1]^2 + wnd[,2]^2)
@@ -126,7 +129,7 @@ for(i in 1:nrow(tmTab)) {
     ind    <- ind[-del,]
     dest   <- dest[-del,]
   }
-  
+
   invisible(mapply(function(x,y) {tracks[x,,y] <<- dest[y,]}, ind[,1]+1, 1:dim(tracks)[3]))
 
   ls <- lapply(1:dim(tracks)[3], function(x) {
@@ -136,7 +139,7 @@ for(i in 1:nrow(tmTab)) {
 
   t <- suppressMessages(st_wrap_dateline(st_sf(st_sfc(st_multilinestring(ls[!sapply(ls, is.null)]), crs = 4326))) %>% st_intersection(ocean_map))
 
-  
+
   grTracks <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(st_coordinates(t)[,1:2]), st_coordinates(t)[,3]), function(x) {
     x[,2] <- x[,2]*-1
     sph2car(cbind(x,1))[,c(1,3,2)] %>%
@@ -146,16 +149,20 @@ for(i in 1:nrow(tmTab)) {
   
   
   ### Bar-tailed godwit tracks ----
-  realTracks <- subset(loopTracks, timestamp<=tmTab[i,1])
+  realTracks <- subset(loopTracks, timestamp<=tmTab[i,1] & leg==tmTab[i,2])
   last       <- lapply(unique(realTracks$id), function(x) realTracks[realTracks$id==x,][sum(realTracks$id==x),])
+    lastTab  <- do.call("rbind", last)[!is.na(do.call("rbind", last)[,"location.long"]),]
 
-  t_real <- st_wrap_dateline(st_sf(st_sfc(st_multipoint(as.matrix(do.call("rbind", last)[!is.na(do.call("rbind", last)[,"location.long"]),c("location.long", "location.lat")]))), crs = 4326))
+  t_real <- st_wrap_dateline(st_sf(st_sfc(st_multipoint(as.matrix(lastTab[,c("location.long", "location.lat")]))), crs = 4326))
    
-  grPoints <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(cbind(st_coordinates(t_real)[,1:2], id = 1:nrow(st_coordinates(t_real)), colID = do.call("rbind", last)$colID, dist = do.call("rbind", last)$dist)),
+  grPoints <- dplyr::bind_rows(parallel::mclapply(split(as.data.frame(cbind(st_coordinates(t_real)[,1:2],
+                                                                            colID = lastTab$colID, dist = lastTab$dist,
+                                                                            support = lastTab$'5')),
                                                         1:nrow(st_coordinates(t_real))),
           function(x) {
               sp <- sph2car(matrix(c((x$X+rot[i,1])*-1, x$Y, 1), ncol = 3))[,c(1,3,2)]
-              sphere(x = sp[1], y = 7+sp[2], z = sp[3], material = diffuse(color=ifelse(is.na(x$colID) | x$dist<10, "grey30", cls[x$colID])), radius = 0.02)
+              sphere(x = sp[1], y = 7+sp[2], z = sp[3], material = diffuse(color=ifelse(is.na(x$colID) | x$dist<5, "grey30", cls[x$colID])), 
+                     radius = ifelse(is.na(x$colID) | x$dist<5, 0.015, approx(c(0, 40), c(0.015, 0.045), abs(x$support))$y))
             }, mc.cores = 4))
   
   
@@ -267,8 +274,9 @@ for(i in 1:nrow(tmTab)) {
     add_object(group_objects(grLines)) %>%
     add_object(group_objects(grPoints)) %>%
     add_object(sphere(y = 9, z = 10, x = 20, radius = 6, material=light(intensity=10))) %>%
-    render_scene(width=400, height=400, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
-                 samples= 200, clamp_value=10, lookfrom=c(rot[i,2],rot[i,3],rot[i,4]), lookat=c(0,7,0), camera_up = c(0,1,0), filename=glue::glue("~/Desktop/tmp/globe_{i}.png"))
+    render_scene(width=550, height=600, aperture=0, fov=14, sample_method = "random", parallel = TRUE,
+                 samples= 250, clamp_value=10, lookfrom=c(rot[i,2],rot[i,3],rot[i,4]), lookat=c(0,7,0), camera_up = c(0,1,0), 
+                 filename=glue::glue("/bioing/user/slisovsk/MovSimData/tmp/globe_{i}.png"))
   
   
   # title_mat = matrix(0,55,1400) %>%
@@ -304,7 +312,7 @@ for(i in 1:nrow(tmTab)) {
   #               ))})
 }
 
-# av::av_encode_video(glue::glue("~/Google Drive//tmp/full_image_{1:121}.png"), 
+ # av::av_encode_video(glue::glue("~/Google Drive//tmp/full_image_{1:121}.png"), 
                     # output = "~/Google Drive//globe_viz.mp4", framerate = 15)
 
 
