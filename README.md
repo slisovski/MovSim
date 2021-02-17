@@ -1,4 +1,4 @@
-# Animal tracks on the globe in R <img src="man/figures/globeTracks.png" align="right" width="15%" height="15%"/>
+# Animal tracks on the globe with R <img src="man/figures/globeTracks.png" align="right" width="15%" height="15%"/>
 
 
 ## Tutorial
@@ -7,7 +7,7 @@ I recently submitted a simulation of migrating Bar-tailed godwits (_Limosa lappo
 
 Thanks to Jesse Conklin and Phil Battley for sharing the tracks and for valuable input and discussion sourrounding the migration of this species.
 
-In this tutorial, I will describe the main steps and processes to project tracks on the 3D surface of the earth, include wind fields and render it using (rayshader)[https://github.com/tylermorganwall/rayshader].
+In this tutorial, I will describe the main steps and processes to project tracks on the 3D surface of the earth, include wind fields and render the scene using [rayshader](https://github.com/tylermorganwall/rayshader).
 
 
 ## Packages
