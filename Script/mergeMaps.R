@@ -335,3 +335,13 @@ av::av_encode_video(glue::glue("{tmp_path}/sim_image_{1:1690}.png"),
                     output = "Video/BTGviz.mov", framerate = 20)
  
 
+## GIF
+library(magick)
+library(magrittr)
+
+glue::glue("~/Desktop/simImage/sim_image_{1:450}.png") %>% 
+  image_read() %>%
+  image_join() %>%
+  image_animate(fps=25, optimize = TRUE) %>%
+  image_write("~/Desktop/BTG_viz.gif")
+
